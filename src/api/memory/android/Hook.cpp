@@ -7,8 +7,6 @@
 #include <string>
 #include <vector>
 
-#include "dobby.h"
-
 // Define RT_SUCCESS if not already defined
 #ifndef RT_SUCCESS
 #define RT_SUCCESS 0
@@ -24,6 +22,18 @@
 #include <type_traits>
 #include <unordered_map>
 
+#include <dlfcn.h>
+
+typedef enum {
+  SHADOWHOOK_MODE_SHARED = 0, // a function can be hooked multiple times
+  SHADOWHOOK_MODE_UNIQUE = 1  // a function can only be hooked once, and hooking
+                              // again will report an error
+} shadowhook_mode_t;
+
+static int (*shadowhook_init)(shadowhook_mode_t mode, bool debuggable);
+static void *(*shadowhook_hook_func_addr)(void *func_addr, void *new_addr,
+                                          void **orig_addr);
+static int (*shadowhook_unhook)(void *stub);
 namespace memory {
 
 struct HookElement {
@@ -43,6 +53,7 @@ struct HookData {
   FuncPtr target{};
   FuncPtr origin{};
   FuncPtr start{};
+  FuncPtr stub{};
   int hookId{};
   std::set<HookElement> hooks{};
 
@@ -80,6 +91,27 @@ int hook(FuncPtr target, FuncPtr detour, FuncPtr *originalFunc,
          HookPriority priority, bool suspendThreads) {
   std::lock_guard lock(hooksMutex);
 
+  static bool init = false;
+
+  if (!init) {
+    void *handle = dlopen("libshadowhook.so", RTLD_LAZY);
+    shadowhook_init =
+        (int (*)(shadowhook_mode_t, bool))(dlsym(handle, "shadowhook_init"));
+
+    shadowhook_hook_func_addr = (void *(*)(void *, void *, void **))(
+        dlsym(handle, "shadowhook_hook_func_addr"));
+
+    shadowhook_unhook =
+        (int (*)(void *func_addr))(dlsym(handle, "shadowhook_unhook"));
+
+    auto result = shadowhook_init(SHADOWHOOK_MODE_SHARED, false);
+    if (result == 0) {
+      init = true;
+    }
+  }
+
+  LOGI("target = 0x%lx, detour = 0x%lx", target, detour);
+
   auto it = getHooks().find(target);
   if (it != getHooks().end()) {
     auto hookData = it->second;
@@ -87,7 +119,7 @@ int hook(FuncPtr target, FuncPtr detour, FuncPtr *originalFunc,
         {detour, originalFunc, priority, hookData->incrementHookId()});
     hookData->updateCallList();
 
-    DobbyHook(target, hookData->start, &hookData->origin);
+    shadowhook_hook_func_addr(target, hookData->start, &hookData->origin);
     return 0;
   }
 
@@ -95,10 +127,10 @@ int hook(FuncPtr target, FuncPtr detour, FuncPtr *originalFunc,
   hookData->target = target;
   hookData->origin = nullptr;
   hookData->start = detour;
+  hookData->stub = shadowhook_hook_func_addr(target, detour, &hookData->origin);
   hookData->hooks.insert(
       {detour, originalFunc, priority, hookData->incrementHookId()});
-
-  if (DobbyHook(target, detour, &hookData->origin) != RT_SUCCESS) {
+  if (!hookData->stub) {
     return -1;
   }
 
@@ -125,10 +157,10 @@ bool unhook(FuncPtr target, FuncPtr detour, bool suspendThreads) {
       hookData->updateCallList();
 
       if (hookData->hooks.empty()) {
-        DobbyDestroy(target);
+        shadowhook_unhook(hookData->stub);
         getHooks().erase(target);
       } else {
-        DobbyHook(target, hookData->start, &hookData->origin);
+        shadowhook_hook_func_addr(target, hookData->start, &hookData->origin);
       }
 
       return true;
@@ -142,7 +174,7 @@ void unhookAll() {
   std::lock_guard lock(hooksMutex);
 
   for (auto &[target, hookData] : getHooks()) {
-    DobbyDestroy(target);
+    shadowhook_unhook(hookData->stub);
   }
 
   getHooks().clear();
