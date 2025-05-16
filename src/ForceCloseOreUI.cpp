@@ -76,7 +76,7 @@ std::string GetModsFilesPath(JNIEnv *env) {
     c = tolower(c);
 
   return (fs::path(getInternalStoragePath(env)) / "Android" / "data" /
-          package_name / "mods");
+          package_name / "gt2");
 }
 
 SKY_AUTO_STATIC_HOOK(
@@ -147,7 +147,7 @@ std::string getLocalAppDataPath() {
 
 std::string getUWPModsDir() {
   std::string appDataPath = getLocalAppDataPath();
-  std::string uwpMods = appDataPath + "\\mods\\ForceCloseOreUI\\";
+  std::string uwpMods = appDataPath + "\\gt2\\CloseOreUI\\";
   return uwpMods;
 }
 #endif
@@ -166,7 +166,7 @@ bool testDirWritable(const std::string &dir) {
 
 std::string getConfigDir() {
 #if defined(_WIN32)
-  std::string primary = "mods/ForceCloseOreUI/";
+  std::string primary = "gt2/CloseOreUI/";
   if (testDirWritable(primary))
     return primary;
   std::string fallback = getUWPModsDir();
@@ -176,7 +176,7 @@ std::string getConfigDir() {
 #else
   std::string primary = "/storage/emulated/0/games";
   if (!primary.empty()) {
-    primary += "/ForceCloseOreUI/";
+    primary += "/CloseOreUI/";
     if (testDirWritable(primary))
       return primary;
   }
@@ -184,7 +184,7 @@ std::string getConfigDir() {
     return primary;
   std::string base = GetModsFilesPath(env);
   if (!base.empty()) {
-    base += "/ForceCloseOreUI/";
+    base += "/CloseOreUI/";
     if (testDirWritable(base))
       return base;
   }
