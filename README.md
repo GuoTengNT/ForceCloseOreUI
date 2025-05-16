@@ -4,7 +4,7 @@
 
 # ForceCloseOreUI
 
-A handy utility to force close the Minecraft OreUI.
+A handy utility to force close the Minecraft OreUI..
 
 ---
 
